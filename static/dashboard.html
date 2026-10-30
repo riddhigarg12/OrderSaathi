@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrderSaathi</title>
+<style>
+:root{--bg:#f2f4f6;--card:#fff;--ink:#14202b;--mute:#5b6975;--line:#dde3e8;--ok:#0b6b5d;--warn:#b4540a;--bad:#a3262a}
+@media (prefers-color-scheme:dark){:root{--bg:#10171d;--card:#18222b;--ink:#e8eef2;--mute:#93a1ad;--line:#2a3743;--ok:#5fd0bd;--warn:#f0a259;--bad:#f08587}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--line)}
+h1{font-size:20px;margin:0}
+h2{font-size:15px;margin:0 0 10px}
+main{display:grid;gap:16px;padding:16px 24px;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr))}
+section{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;overflow-x:auto}
+section.wide{grid-column:1/-1}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 10px 7px 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:500}
+.chip{display:inline-block;padding:1px 8px;border-radius:99px;border:1px solid currentColor;font-size:12px;white-space:nowrap}
+.confirmed,.logged,.will_pay,.completed{color:var(--ok)}
+.needs_review,.call_back,.no_commitment,.paid_claimed{color:var(--warn)}
+.flag{color:var(--bad)}
+.empty{color:var(--mute);padding:8px 0}
+button{font:inherit;padding:6px 14px;border-radius:6px;border:1px solid var(--ok);background:var(--ok);color:var(--card);cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#status{color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>OrderSaathi</h1>
+  <div><span id="status">Connecting…</span> <button id="collect">Start collection calls</button></div>
+</header>
+<main>
+  <section class="wide"><h2>Orders</h2><table id="orders"></table></section>
+  <section><h2>Invoices</h2><table id="invoices"></table></section>
+  <section><h2>Calls</h2><table id="calls"></table></section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const E = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+const inr = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+const chip = s => s ? E('span', 'chip ' + s, s.replace(/_/g, ' ')) : '';
+
+function fill(id, heads, rows, empty) {
+  const t = $(id); t.replaceChildren();
+  const hr = E('tr'); heads.forEach(h => hr.append(E('th', '', h))); t.append(hr);
+  if (!rows.length) { const tr = E('tr'), td = E('td', 'empty', empty); td.colSpan = heads.length; tr.append(td); t.append(tr); return; }
+  rows.forEach(cells => {
+    const tr = E('tr');
+    cells.forEach(c => { const td = E('td'); c instanceof Node ? td.append(c) : (td.textContent = c ?? ''); tr.append(td); });
+    t.append(tr);
+  });
+}
+
+function link(url) { if (!url) return ''; const a = E('a', '', 'Listen'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; return a; }
+
+async function load() {
+  try {
+    const s = await (await fetch('/api/state')).json();
+    fill('orders', ['Order', 'Retailer', 'Items', 'Total', 'Status', 'Note'],
+      s.orders.map(o => [o.order_no, o.retailer, o.items.map(i => i.qty + ' × ' + i.name).join(', '), inr(o.total), chip(o.status), o.reason || '']),
+      'No orders yet. Call your Bolna number to place one.');
+    fill('invoices', ['Invoice', 'Retailer', 'Amount', 'Due', 'Outcome', 'Promised'],
+      s.invoices.map(i => [i.invoice_no, i.retailer, inr(i.amount), i.due_date, chip(i.outcome), i.promised_date || i.promised_text || '']),
+      'No invoices.');
+    fill('calls', ['Retailer', 'Direction', 'Status', 'Flag', 'Audio'],
+      s.calls.map(c => [c.retailer || '—', c.direction || '', c.status || '', c.escalated ? E('span', 'flag', c.reason || 'Escalated') : '', link(c.recording_url)]),
+      'No calls yet.');
+    $('status').textContent = 'Live · updated ' + new Date().toLocaleTimeString();
+  } catch (e) { $('status').textContent = 'Backend unreachable'; }
+}
+
+let token = '';
+$('collect').onclick = async () => {
+  token = token || prompt('API token') || '';
+  if (!token) return;
+  const r = await fetch('/admin/collect', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+  $('status').textContent = r.ok ? 'Collection calls started' : 'Could not start calls (' + r.status + ')';
+};
+
+load(); setInterval(load, 2000);
+</script>
+</body>
+</html>
